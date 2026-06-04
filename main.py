@@ -204,11 +204,28 @@ def handle_reply_code(message):
         except Exception as e:
             bot.reply_to(message, "❌ Lỗi: " + str(e))
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# ===== ĐỘNG CƠ GIỮ BOT VÀ WEB BẤT TỬ 24/7 =====
+import threading
+import time
+import os
+
+def run_bot():
+    while True:
+        try:
+            print("🚀 Đang khởi động Bot Telegram...")
+            # Lệnh infinity_polling giúp Bot chống chịu mạng lag cực tốt
+            bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        except Exception as e:
+            print(f"⚠️ Bot kẹt mạng, tự động tái sinh sau 3s... Lỗi: {e}")
+            time.sleep(3)
 
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    print("🚀 HỆ THỐNG ĐÃ LÊN SÓNG SẴN SÀNG CHẠY 24/7!")
-    bot.infinity_polling()
+    # 1. Tách Bot ra chạy ở 1 luồng riêng không bao giờ chết
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.daemon = True
+    bot_thread.start()
+    
+    # 2. Chạy Web Server song song
+    # (Render yêu cầu phải lấy PORT từ môi trường của nó)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
