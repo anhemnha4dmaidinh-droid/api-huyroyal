@@ -50,7 +50,7 @@ def save_users(data):
 def keep_alive():
     return "SERVER HUY ROYAL ĐANG CHẠY TRÊN RENDER!", 200
 
-# ===== API ĐĂNG KÝ (CHỐNG TRÙNG LẶP TOÀN HỆ THỐNG) =====
+# ===== API ĐĂNG KÝ =====
 @app.route("/api/register", methods=["POST", "OPTIONS"])
 def register():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -81,7 +81,7 @@ def register():
     except Exception as e:
         return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
 
-# ===== API ĐĂNG NHẬP (ĐỒNG BỘ ĐIỆN THOẠI VÀ PC) =====
+# ===== API ĐĂNG NHẬP =====
 @app.route("/api/login", methods=["POST", "OPTIONS"])
 def login_api():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -102,6 +102,7 @@ def login_api():
     except Exception as e:
         return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
 
+# ===== API GỬI BILL =====
 @app.route("/api/deposit", methods=["POST", "OPTIONS"])
 def deposit():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -145,12 +146,24 @@ def deposit():
     except Exception as e:
         return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
 
+# ===== API TẢI LỊCH SỬ (ĐÃ SỬA LỌC THEO USERNAME) =====
 @app.route("/api/history", methods=["GET", "OPTIONS"])
 def get_history():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
+    
+    # Lấy tên user từ Web gửi lên
+    username = request.args.get("username", "").strip().lower()
     history = load_history()
-    return jsonify({"data": history[:15]}), 200
+    
+    # Lọc ra đúng danh sách bill của user đó
+    user_history = []
+    for item in history:
+        if item.get("username", "").strip().lower() == username:
+            user_history.append(item)
+            
+    return jsonify({"data": user_history[:15]}), 200
 
+# ===== CÁC HÀM XỬ LÝ BOT TELEGRAM =====
 @bot.callback_query_handler(func=lambda call: call.data.startswith("duyet_") or call.data.startswith("huy_"))
 def handle_duyet_don(call):
     action, order_id = call.data.split("_")
